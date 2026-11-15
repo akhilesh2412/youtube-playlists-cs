@@ -88,11 +88,14 @@ class FreeCoursesProvider : MainAPI() {
         }
     }
 
-    // YouTube thumbnail ka sabse bharosemand tareeka: i.ytimg.com ka
-    // direct URL. Har video ke liye hqdefault.jpg hota hai, isiliye
-    // Invidious ke thumbnail format pe depend nahi karna padta.
+    // Thumbnail ka tareeka schnrj/Youtube-thumbnail-downloader wala hai:
+    // uska script.js sirf ek hi pattern banata hai —
+    // https://img.youtube.com/vi/{VIDEO_ID}/maxresdefault.jpg
+    // (host img.youtube.com, quality maxresdefault). Isiliye har jagah
+    // yahi URL use hota hai, Invidious ke thumbnail format pe depend
+    // nahi karna padta.
     private fun ytThumb(videoId: String): String =
-        "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
+        "https://img.youtube.com/vi/$videoId/maxresdefault.jpg"
 
     private fun bestThumb(video: InvidiousVideo): String? {
         val id = video.videoId
@@ -175,7 +178,7 @@ class FreeCoursesProvider : MainAPI() {
                     InvidiousVideo(
                         title = "Lecture ${index + 1}",
                         videoId = videoId,
-                        thumbUrls = listOf("https://i.ytimg.com/vi/$videoId/hqdefault.jpg")
+                        thumbUrls = listOf("https://img.youtube.com/vi/$videoId/maxresdefault.jpg")
                     )
                 }
             )
@@ -253,6 +256,10 @@ class FreeCoursesProvider : MainAPI() {
             episodes
         ) {
             this.posterUrl = poster
+            // Backdrop pehle set hi nahi tha, isiliye detail page ka
+            // backdrop khaali dikhta tha — ab poster wali hi image
+            // backdrop pe bhi lagegi.
+            this.backgroundPosterUrl = poster
             this.plot = "${data.title ?: info?.title ?: id} — ${videos.size} free YouTube videos."
         }
     }
