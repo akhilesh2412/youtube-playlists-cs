@@ -367,6 +367,102 @@ class FreeCoursesProvider : MainAPI() {
         return found
     }
 
+    // YouTube watch page se seedha streams: ytInitialPlayerResponse ke
+    // andar "streamingData" hota hai — usme hlsManifestUrl (live ki .m3u8)
+    // aur formats[] (audio+video wale progressive mp4, direct URL) hote
+    // hain. Ye Invidious/Piped pe depend nahi karta, isiliye teesra
+    // fallback hai. signatureCipher wale formats skip karte hain.
+    private fun extractStreamingData(html: String): JSONObject? {
+        val key = "\"streamingData\":"
+        val start = html.indexOf(key)
+        if (start < 0) return null
+        var i = html.indexOf('{', start + key.length)
+        if (i < 0) return null
+        var depth = 0
+        var inString = false
+        var escape = false
+        var j = i
+        while (j < html.length) {
+            val c = html[j]
+            if (inString) {
+                if (escape) escape = false
+                else if (c == '\\') escape = true
+                else if (c == '"') inString = false
+            } else {
+                when (c) {
+                    '"' -> inString = true
+                    '{' -> depth++
+                    '}' -> {
+                        depth--
+                        if (depth == 0) {
+                            return try {
+                                JSONObject(html.substring(i, j + 1))
+                            } catch (e: Exception) {
+                                null
+                            }
+                        }
+                    }
+                }
+            }
+            j++
+        }
+        return null
+    }
+
+    private suspend fun tryYouTubeWatchPage(
+        videoId: String,
+        callback: (ExtractorLink) -> Unit
+    ): Boolean {
+        return try {
+            val html = app.get(
+                "https://www.youtube.com/watch?v=$videoId",
+                headers = mapOf(
+                    "User-Agent" to "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36",
+                    "Accept-Language" to "en-US,en;q=0.9"
+                )
+            ).text
+            val streaming = extractStreamingData(html) ?: return false
+            var found = false
+            val hls = streaming.optString("hlsManifestUrl").takeIf { it.isNotBlank() }
+            if (hls != null) {
+                callback.invoke(
+                    newExtractorLink(
+                        source = this.name,
+                        name = "HLS",
+                        url = hls,
+                        type = ExtractorLinkType.M3U8
+                    ) { this.quality = Qualities.Unknown.value }
+                )
+                found = true
+            }
+            val formats = streaming.optJSONArray("formats")
+            if (formats != null) {
+                for (i in 0 until formats.length()) {
+                    val f = formats.optJSONObject(i) ?: continue
+                    val url = f.optString("url")
+                    if (url.isBlank()) continue
+                    val mime = f.optString("mimeType")
+                    if (mime.isNotBlank() && !mime.contains("video/mp4")) continue
+                    val label = f.optString("qualityLabel")
+                    val q = label.filter { it.isDigit() }.toIntOrNull()
+                        ?: Qualities.Unknown.value
+                    callback.invoke(
+                        newExtractorLink(
+                            source = this.name,
+                            name = label.ifBlank { "YouTube" },
+                            url = url,
+                            type = ExtractorLinkType.VIDEO
+                        ) { this.quality = q }
+                    )
+                    found = true
+                }
+            }
+            found
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
@@ -376,10 +472,12 @@ class FreeCoursesProvider : MainAPI() {
         if (data.isBlank()) return false
         val videoId = videoIdFromUrl(data)
         if (videoId != null) {
-            // Pehle Invidious, phir Piped — dono se direct .m3u8 (HLS)
-            // aur mp4 milta hai jo ExoPlayer seedha chala sakta hai.
+            // Pehle Invidious, phir Piped, phir YouTube watch page se
+            // seedha — teeno se direct .m3u8 / mp4 milta hai jo ExoPlayer
+            // seedha chala sakta hai.
             if (tryInvidiousStreams(videoId, callback)) return true
             if (tryPipedStreams(videoId, callback)) return true
+            if (tryYouTubeWatchPage(videoId, callback)) return true
         }
         // Kuch na mila to purana tareeka: watch URL CloudStream ke
         // built-in YouTube extractor ko de do, playback toote nahi.
