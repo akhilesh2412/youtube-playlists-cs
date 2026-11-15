@@ -53,6 +53,7 @@ jobs:
           ./gradlew make makePluginsJson
           cp **/build/*.cs3 $GITHUB_WORKSPACE/builds/ || echo "No .cs3 files found"
           cp build/plugins.json $GITHUB_WORKSPACE/builds/ || echo "No plugins.json found"
+          cp build/plugins.json $GITHUB_WORKSPACE/builds/repo.json || echo No plugins.json found
 
       - name: Push builds
         run: |
