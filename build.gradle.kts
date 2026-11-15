@@ -40,7 +40,7 @@ subprojects {
         status = 1
         tvTypes = listOf("Others")
         description = "Free YouTube playlists — CUET MCA Preparation, CUET PG MCA Computer Science (Adda247), C Programming Course, C Programming"
-        iconUrl = "https://raw.githubusercontent.com/sky/youtube-playlists-cs/main/icon.png"
+        iconUrl = "https://raw.githubusercontent.com/akhilesh2412/youtube-playlists-cs/main/icon.png"
     }
 
     android {
