@@ -5,9 +5,20 @@ import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.newExtractorLink
-import kotlinx.serialization.Serializable
+import org.json.JSONObject
 
 data class PlaylistInfo(val id: String, val title: String)
+
+data class InvidiousVideo(
+    val title: String?,
+    val videoId: String?,
+    val thumbUrls: List<String>
+)
+
+data class InvidiousPlaylist(
+    val title: String?,
+    val videos: List<InvidiousVideo>
+)
 
 class FreeCoursesProvider : MainAPI() {
     override var mainUrl = "https://www.youtube.com"
@@ -53,12 +64,40 @@ class FreeCoursesProvider : MainAPI() {
         "inv.tux.pizza"
     )
 
+    private fun parseInvidious(text: String): InvidiousPlaylist? {
+        return try {
+            val root = JSONObject(text)
+            val title = if (root.has("title") && !root.isNull("title")) root.optString("title") else null
+            val videosArray = root.optJSONArray("videos") ?: return null
+            val videos = mutableListOf<InvidiousVideo>()
+            for (i in 0 until videosArray.length()) {
+                val v = videosArray.optJSONObject(i) ?: continue
+                val videoId = if (v.has("videoId") && !v.isNull("videoId")) v.optString("videoId") else null
+                if (videoId.isNullOrBlank()) continue
+                val vTitle = if (v.has("title") && !v.isNull("title")) v.optString("title") else null
+                val thumbs = mutableListOf<String>()
+                val thumbsArray = v.optJSONArray("videoThumbnails")
+                if (thumbsArray != null) {
+                    for (j in 0 until thumbsArray.length()) {
+                        val t = thumbsArray.optJSONObject(j) ?: continue
+                        val url = t.optString("url")
+                        if (url.isNotBlank()) thumbs.add(url)
+                    }
+                }
+                videos.add(InvidiousVideo(vTitle, videoId, thumbs))
+            }
+            if (videos.isEmpty()) null else InvidiousPlaylist(title, videos)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     private suspend fun fetchViaInvidious(id: String): InvidiousPlaylist? {
         for (host in invidiousHosts) {
             try {
-                val data = app.get("https://$host/api/v1/playlists/$id")
-                    .parsedSafe<InvidiousPlaylist>()
-                if (data?.videos?.isNotEmpty() == true) return data
+                val text = app.get("https://$host/api/v1/playlists/$id").text
+                val data = parseInvidious(text)
+                if (data != null) return data
             } catch (e: Exception) {
                 continue
             }
@@ -85,14 +124,11 @@ class FreeCoursesProvider : MainAPI() {
             val title = playlists.firstOrNull { it.id == id }?.title
             InvidiousPlaylist(
                 title = title,
-                playlistId = id,
                 videos = ids.mapIndexed { index, videoId ->
                     InvidiousVideo(
                         title = "Lecture ${index + 1}",
                         videoId = videoId,
-                        videoThumbnails = listOf(
-                            InvidiousThumb(url = "https://i.ytimg.com/vi/$videoId/hqdefault.jpg")
-                        )
+                        thumbUrls = listOf("https://i.ytimg.com/vi/$videoId/hqdefault.jpg")
                     )
                 }
             )
@@ -106,9 +142,7 @@ class FreeCoursesProvider : MainAPI() {
     }
 
     private fun bestThumb(video: InvidiousVideo): String? {
-        val thumbs = video.videoThumbnails.orEmpty()
-        return thumbs.maxByOrNull { it.width ?: 0 }?.url
-            ?: thumbs.lastOrNull()?.url
+        return video.thumbUrls.lastOrNull()
             ?: video.videoId?.let { "https://i.ytimg.com/vi/$it/hqdefault.jpg" }
     }
 
@@ -127,7 +161,7 @@ class FreeCoursesProvider : MainAPI() {
         val out = mutableListOf<SearchResponse>()
         for (p in playlists) {
             val data = fetchPlaylist(p.id) ?: continue
-            data.videos.orEmpty()
+            data.videos
                 .filter { it.title?.lowercase()?.contains(q) == true }
                 .forEach { v ->
                     val videoId = v.videoId ?: return@forEach
@@ -149,7 +183,7 @@ class FreeCoursesProvider : MainAPI() {
         val info = playlists.firstOrNull { it.id == id }
         val data = fetchPlaylist(id) ?: throw ErrorLoadingException("Playlist load nahi hui")
 
-        val videos = data.videos.orEmpty()
+        val videos = data.videos
         val episodes = videos.mapIndexedNotNull { index, v ->
             val videoId = v.videoId ?: return@mapIndexedNotNull null
             newEpisode("https://www.youtube.com/watch?v=$videoId") {
@@ -195,27 +229,3 @@ class FreeCoursesProvider : MainAPI() {
         return true
     }
 }
-
-@Serializable
-data class InvidiousPlaylist(
-    val title: String? = null,
-    val playlistId: String? = null,
-    val videos: List<InvidiousVideo>? = null
-)
-
-@Serializable
-data class InvidiousVideo(
-    val title: String? = null,
-    val videoId: String? = null,
-    val author: String? = null,
-    val lengthSeconds: Int? = null,
-    val videoThumbnails: List<InvidiousThumb>? = null
-)
-
-@Serializable
-data class InvidiousThumb(
-    val quality: String? = null,
-    val url: String? = null,
-    val width: Int? = null,
-    val height: Int? = null
-)
