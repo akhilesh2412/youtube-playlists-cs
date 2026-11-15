@@ -1,5 +1,7 @@
 import com.android.build.gradle.BaseExtension
 import com.lagradost.cloudstream3.gradle.CloudstreamExtension
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
 buildscript {
     repositories {
@@ -7,11 +9,14 @@ buildscript {
         mavenCentral()
         maven("https://jitpack.io")
     }
+
     dependencies {
-        classpath("com.android.tools.build:gradle:8.7.2")
-        classpath("com.github.recloudstream:gradle:-SNAPSHOT")
-        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.0.21")
-        classpath("org.jetbrains.kotlin:kotlin-serialization:2.0.21")
+        classpath("com.android.tools.build:gradle:8.7.3")
+        // Cloudstream gradle plugin — use master-SNAPSHOT (explicit branch)
+        // instead of bare "-SNAPSHOT", which failed to resolve on JitPack
+        // in run 43748780678: "Could not find com.github.recloudstream:gradle:-SNAPSHOT"
+        classpath("com.github.recloudstream:gradle:master-SNAPSHOT")
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.3.0")
     }
 }
 
@@ -31,40 +36,50 @@ fun Project.android(configuration: BaseExtension.() -> Unit) =
 
 subprojects {
     apply(plugin = "com.android.library")
-    apply(plugin = "org.jetbrains.kotlin.android")
-    apply(plugin = "kotlinx-serialization")
+    apply(plugin = "kotlin-android")
+    apply(plugin = "com.lagradost.cloudstream3.gradle")
 
     cloudstream {
-        language = "hi"
-        authors = listOf("sky")
-        status = 1
-        tvTypes = listOf("Others")
-        description = "Free YouTube playlists — CUET MCA Preparation, CUET PG MCA Computer Science (Adda247), C Programming Course, C Programming"
-        iconUrl = "https://raw.githubusercontent.com/akhilesh2412/youtube-playlists-cs/main/icon.png"
+        setRepo(System.getenv("GITHUB_REPOSITORY") ?: "https://github.com/akhilesh2412/youtube-playlists-cs")
     }
 
     android {
-        compileSdk = 35
-        defaultConfig { minSdk = 21 }
+        namespace = "com.venice.freecourses"
+
+        defaultConfig {
+            minSdk = 21
+            compileSdkVersion(35)
+            targetSdk = 35
+        }
+
         compileOptions {
             sourceCompatibility = JavaVersion.VERSION_1_8
             targetCompatibility = JavaVersion.VERSION_1_8
         }
-        kotlinOptions {
-            jvmTarget = "1.8"
-            freeCompilerArgs += listOf(
-                "-Xno-param-assertions",
-                "-Xno-call-assertions",
-                "-Xno-receiver-assertions"
-            )
+
+        tasks.withType<KotlinJvmCompile> {
+            compilerOptions {
+                jvmTarget.set(JvmTarget.JVM_1_8)
+                freeCompilerArgs.addAll(
+                    "-Xno-call-assertions",
+                    "-Xno-param-assertions",
+                    "-Xno-receiver-assertions"
+                )
+            }
         }
     }
 
     dependencies {
-        val apk by configurations
-        apk("com.lagradost:cloudstream3:pre-release")
-        implementation("com.github.Blatzar:NiceHttp:0.4.5")
-        implementation("org.jsoup:jsoup:1.18.1")
-        implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+        val implementation by configurations
+
+        implementation("com.github.recloudstream.cloudstream:library:master-SNAPSHOT")
+        implementation(kotlin("stdlib"))
+        implementation("com.github.Blatzar:NiceHttp:0.4.11")
+        implementation("org.jsoup:jsoup:1.18.3")
+        implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.13.1")
     }
+}
+
+task<Delete>("clean") {
+    delete(rootProject.layout.buildDirectory)
 }
