@@ -7,5 +7,4 @@ cloudstream {
     status = 1
     tvTypes = listOf("Others")
     language = "hi"
-    iconUrl = "https://raw.githubusercontent.com/akhilesh2412/youtube-playlists-cs/main/icon.png"
 }
