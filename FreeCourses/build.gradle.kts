@@ -1,5 +1,5 @@
 // Use an integer for version numbers
-version = 2
+version = 3
 
 cloudstream {
     description = "Free YouTube playlists — CUET MCA, CUET PG MCA Computer Science, C Programming"
