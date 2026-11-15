@@ -12,10 +12,11 @@ buildscript {
 
     dependencies {
         classpath("com.android.tools.build:gradle:8.7.3")
-        // Cloudstream gradle plugin — use master-SNAPSHOT (explicit branch)
-        // instead of bare "-SNAPSHOT", which failed to resolve on JitPack
-        // in run 43748780678: "Could not find com.github.recloudstream:gradle:-SNAPSHOT"
-        classpath("com.github.recloudstream:gradle:master-SNAPSHOT")
+        // Cloudstream gradle plugin — pin to the exact JitPack build that is
+        // green: master-32895aedb6-1, BUILD SUCCESSFUL in 14s (Oct 21 2026).
+        // master-SNAPSHOT and bare -SNAPSHOT both failed to resolve in
+        // runs #5 (43748780678) and #10 (43750586300).
+        classpath("com.github.recloudstream:gradle:master-32895aedb6-1")
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.3.0")
     }
 }
