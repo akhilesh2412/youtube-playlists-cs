@@ -1,0 +1,22 @@
+[
+    {
+        "url": "https://raw.githubusercontent.com/akhilesh2412/youtube-playlists-cs/builds/FreeCourses.cs3",
+        "status": 1,
+        "version": 7,
+        "name": "FreeCourses",
+        "internalName": "FreeCourses",
+        "authors": [
+            "akhilesh2412"
+        ],
+        "description": "Free YouTube playlists \u2014 CUET MCA, CUET PG MCA Computer Science, C Programming",
+        "fileSize": 29260,
+        "repositoryUrl": "https://github.com/akhilesh2412/youtube-playlists-cs",
+        "language": "hi",
+        "tvTypes": [
+            "Movie",
+            "TvSeries"
+        ],
+        "apiVersion": 1,
+        "fileHash": "sha256-1b88e4273ad9088404d5b9ce29e520858c31df2ce8ba8c0993416c12bb24e501"
+    }
+]
