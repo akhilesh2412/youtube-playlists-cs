@@ -17,7 +17,8 @@ data class InvidiousVideo(
 
 data class InvidiousPlaylist(
     val title: String?,
-    val videos: List<InvidiousVideo>
+    val videos: List<InvidiousVideo>,
+    val playlistThumbnail: String? = null
 )
 
 class FreeCoursesProvider : MainAPI() {
@@ -64,10 +65,56 @@ class FreeCoursesProvider : MainAPI() {
         "inv.tux.pizza"
     )
 
+    // Piped public API — sirf stream nikaalne ke liye (loadLinks me).
+    // Har host pe /api/streams/{videoId} se "hls" (.m3u8) milta hai.
+    private val pipedHosts = listOf(
+        "pipedapi.kavin.rocks",
+        "pipedapi.adminforge.de",
+        "pipedapi.leptons.xyz",
+        "piped.video"
+    )
+
+    // Relative thumbnail URL ko absolute https URL banao.
+    // Invidious kabhi "/vi/VIDEOID/hqdefault.jpg" jaisi relative URL deta
+    // hai — wo CloudStream me load nahi hoti, isiliye normalize zaroori hai.
+    private fun absThumb(url: String?): String? {
+        val u = url?.trim().orEmpty()
+        if (u.isBlank()) return null
+        return when {
+            u.startsWith("http://") || u.startsWith("https://") -> u
+            u.startsWith("//") -> "https:$u"
+            u.startsWith("/") -> "https://i.ytimg.com$u"
+            else -> u
+        }
+    }
+
+    // YouTube thumbnail ka sabse bharosemand tareeka: i.ytimg.com ka
+    // direct URL. Har video ke liye hqdefault.jpg hota hai, isiliye
+    // Invidious ke thumbnail format pe depend nahi karna padta.
+    private fun ytThumb(videoId: String): String =
+        "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
+
+    private fun bestThumb(video: InvidiousVideo): String? {
+        val id = video.videoId
+        if (!id.isNullOrBlank()) return ytThumb(id)
+        return video.thumbUrls.firstNotNullOfOrNull { absThumb(it) }
+    }
+
+    private fun videoIdFromUrl(url: String): String? {
+        val m = Regex("[?&]v=([A-Za-z0-9_-]{11})").find(url)
+        if (m != null) return m.groupValues[1]
+        val last = url.substringAfterLast("/").substringBefore("?").substringBefore("&")
+        return last.takeIf { it.length == 11 }
+    }
+
     private fun parseInvidious(text: String): InvidiousPlaylist? {
         return try {
             val root = JSONObject(text)
             val title = if (root.has("title") && !root.isNull("title")) root.optString("title") else null
+            val playlistThumb = absThumb(
+                if (root.has("playlistThumbnail") && !root.isNull("playlistThumbnail"))
+                    root.optString("playlistThumbnail") else null
+            )
             val videosArray = root.optJSONArray("videos") ?: return null
             val videos = mutableListOf<InvidiousVideo>()
             for (i in 0 until videosArray.length()) {
@@ -86,7 +133,7 @@ class FreeCoursesProvider : MainAPI() {
                 }
                 videos.add(InvidiousVideo(vTitle, videoId, thumbs))
             }
-            if (videos.isEmpty()) null else InvidiousPlaylist(title, videos)
+            if (videos.isEmpty()) null else InvidiousPlaylist(title, videos, playlistThumb)
         } catch (e: Exception) {
             null
         }
@@ -141,14 +188,17 @@ class FreeCoursesProvider : MainAPI() {
         return fetchViaInvidious(id) ?: fetchViaYouTubeHtml(id)
     }
 
-    private fun bestThumb(video: InvidiousVideo): String? {
-        return video.thumbUrls.lastOrNull()
-            ?: video.videoId?.let { "https://i.ytimg.com/vi/$it/hqdefault.jpg" }
-    }
-
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val items = playlists.map { p ->
-            newMovieSearchResponse(p.title, playlistUrl(p.id), TvType.Others)
+            // Playlist card ka thumbnail: pehle playlistThumbnail, nahi to
+            // pehle video ka thumbnail. Pehle yahan poster hi nahi lagta
+            // tha, isiliye playlist ke thumbnails dikhte nahi the.
+            val data = try { fetchPlaylist(p.id) } catch (e: Exception) { null }
+            val poster = data?.playlistThumbnail
+                ?: data?.videos?.firstOrNull()?.let { bestThumb(it) }
+            newMovieSearchResponse(p.title, playlistUrl(p.id), TvType.Others) {
+                this.posterUrl = poster
+            }
         }
         return newHomePageResponse("Playlists", items, false)
     }
@@ -193,7 +243,8 @@ class FreeCoursesProvider : MainAPI() {
             }
         }
 
-        val poster = videos.firstOrNull()?.let { bestThumb(it) }
+        val poster = data.playlistThumbnail
+            ?: videos.firstOrNull()?.let { bestThumb(it) }
 
         return newTvSeriesLoadResponse(
             data.title ?: info?.title ?: id,
@@ -206,6 +257,116 @@ class FreeCoursesProvider : MainAPI() {
         }
     }
 
+    // Invidious video API se direct streams: hlsUrl (.m3u8, ExoPlayer
+    // isko seedha chala sakta hai) aur formatStreams (audio+video wale
+    // progressive mp4). adaptiveFormats nahi lete — wo video-only ya
+    // audio-only hote hain, bina audio ke video chalega.
+    private suspend fun tryInvidiousStreams(
+        videoId: String,
+        callback: (ExtractorLink) -> Unit
+    ): Boolean {
+        var found = false
+        for (host in invidiousHosts) {
+            try {
+                val text = app.get("https://$host/api/v1/videos/$videoId").text
+                if (text.isBlank() || text.trimStart().startsWith("<")) continue
+                val root = JSONObject(text)
+                val hls = root.optString("hlsUrl").takeIf { it.isNotBlank() }
+                if (hls != null) {
+                    callback.invoke(
+                        newExtractorLink(
+                            source = this.name,
+                            name = "HLS",
+                            url = hls,
+                            type = ExtractorLinkType.M3U8
+                        ) { this.quality = Qualities.Unknown.value }
+                    )
+                    found = true
+                }
+                val formats = root.optJSONArray("formatStreams")
+                if (formats != null) {
+                    for (i in 0 until formats.length()) {
+                        val f = formats.optJSONObject(i) ?: continue
+                        val url = f.optString("url")
+                        if (url.isBlank()) continue
+                        val label = f.optString("qualityLabel")
+                            .ifBlank { f.optString("quality") }
+                        val q = label.filter { it.isDigit() }.toIntOrNull()
+                            ?: Qualities.Unknown.value
+                        callback.invoke(
+                            newExtractorLink(
+                                source = this.name,
+                                name = label.ifBlank { "YouTube" },
+                                url = url,
+                                type = ExtractorLinkType.VIDEO
+                            ) { this.quality = q }
+                        )
+                        found = true
+                    }
+                }
+                if (found) return true
+            } catch (e: Exception) {
+                continue
+            }
+        }
+        return found
+    }
+
+    // Piped API se direct streams: "hls" (.m3u8) aur combined
+    // (videoOnly=false) mp4 streams. Video-only formats skip karte hain.
+    private suspend fun tryPipedStreams(
+        videoId: String,
+        callback: (ExtractorLink) -> Unit
+    ): Boolean {
+        var found = false
+        for (host in pipedHosts) {
+            try {
+                val text = app.get("https://$host/api/streams/$videoId").text
+                if (text.isBlank() || text.trimStart().startsWith("<")) continue
+                val root = JSONObject(text)
+                val hls = root.optString("hls").takeIf { it.isNotBlank() }
+                if (hls != null) {
+                    callback.invoke(
+                        newExtractorLink(
+                            source = this.name,
+                            name = "HLS",
+                            url = hls,
+                            type = ExtractorLinkType.M3U8
+                        ) { this.quality = Qualities.Unknown.value }
+                    )
+                    found = true
+                }
+                val streams = root.optJSONArray("videoStreams")
+                if (streams != null) {
+                    for (i in 0 until streams.length()) {
+                        val s = streams.optJSONObject(i) ?: continue
+                        if (s.optBoolean("videoOnly", false)) continue
+                        val url = s.optString("url")
+                        if (url.isBlank()) continue
+                        val mime = s.optString("mimeType")
+                        if (mime.isNotBlank() && !mime.contains("video/mp4")) continue
+                        val label = s.optString("quality")
+                        val q = label.filter { it.isDigit() }.toIntOrNull()
+                            ?: Qualities.Unknown.value
+                        callback.invoke(
+                            newExtractorLink(
+                                source = this.name,
+                                name = label.ifBlank { "YouTube" },
+                                url = url,
+                                type = ExtractorLinkType.VIDEO
+                            ) { this.quality = q }
+                        )
+                        found = true
+                    }
+                }
+                if (found) return true
+            } catch (e: Exception) {
+                continue
+            }
+        }
+        return found
+    }
+
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
@@ -213,8 +374,15 @@ class FreeCoursesProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         if (data.isBlank()) return false
-        // YouTube watch URL CloudStream ke built-in YouTube extractor ko diya
-        // jata hai — wahi video stream nikaalta hai.
+        val videoId = videoIdFromUrl(data)
+        if (videoId != null) {
+            // Pehle Invidious, phir Piped — dono se direct .m3u8 (HLS)
+            // aur mp4 milta hai jo ExoPlayer seedha chala sakta hai.
+            if (tryInvidiousStreams(videoId, callback)) return true
+            if (tryPipedStreams(videoId, callback)) return true
+        }
+        // Kuch na mila to purana tareeka: watch URL CloudStream ke
+        // built-in YouTube extractor ko de do, playback toote nahi.
         callback.invoke(
             newExtractorLink(
                 source = this.name,
