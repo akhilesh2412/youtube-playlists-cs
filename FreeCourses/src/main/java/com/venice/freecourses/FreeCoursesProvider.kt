@@ -28,7 +28,11 @@ class FreeCoursesProvider : MainAPI() {
     override val hasMainPage = true
     override val hasDownloadSupport = true
     override val hasQuickSearch = true
-    override val supportedTypes = setOf(TvType.Others)
+    // CSX (SaurabhKaperwan/CSX) jaisa structure: koi provider
+    // TvType.Others use nahi karta — search hamesha TvType.Movie hota
+    // hai (series ke liye bhi), aur load TvType.TvSeries. Isiliye
+    // supportedTypes me bhi Movie + TvSeries hai.
+    override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries)
 
     // Nayi playlist add karni ho to bas yahan ek line badha do.
     // Ye 4 playlists user ne di hain — sab public free YouTube playlists hain.
@@ -199,7 +203,7 @@ class FreeCoursesProvider : MainAPI() {
             val data = try { fetchPlaylist(p.id) } catch (e: Exception) { null }
             val poster = data?.playlistThumbnail
                 ?: data?.videos?.firstOrNull()?.let { bestThumb(it) }
-            newMovieSearchResponse(p.title, playlistUrl(p.id), TvType.Others) {
+            newMovieSearchResponse(p.title, playlistUrl(p.id), TvType.Movie) {
                 this.posterUrl = poster
             }
         }
@@ -222,7 +226,7 @@ class FreeCoursesProvider : MainAPI() {
                         newMovieSearchResponse(
                             v.title ?: "Untitled",
                             "https://www.youtube.com/watch?v=$videoId",
-                            TvType.Others
+                            TvType.Movie
                         ) { this.posterUrl = bestThumb(v) }
                     )
                 }
@@ -252,7 +256,7 @@ class FreeCoursesProvider : MainAPI() {
         return newTvSeriesLoadResponse(
             data.title ?: info?.title ?: id,
             url,
-            TvType.Others,
+            TvType.TvSeries,
             episodes
         ) {
             this.posterUrl = poster
