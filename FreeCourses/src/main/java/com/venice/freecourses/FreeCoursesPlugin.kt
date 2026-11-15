@@ -1,11 +1,12 @@
 package com.venice.freecourses
 
-import com.lagradost.cloudstream3.plugins.BasePlugin
+import android.content.Context
 import com.lagradost.cloudstream3.plugins.CloudstreamPlugin
+import com.lagradost.cloudstream3.plugins.Plugin
 
 @CloudstreamPlugin
-class FreeCoursesPlugin : BasePlugin() {
-    override fun load() {
+class FreeCoursesPlugin : Plugin() {
+    override fun load(context: Context) {
         registerMainAPI(FreeCoursesProvider())
     }
 }
