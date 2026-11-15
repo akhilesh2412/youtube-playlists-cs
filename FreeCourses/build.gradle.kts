@@ -1,7 +1,11 @@
+// Use an integer for version numbers
+version = 1
+
 cloudstream {
-    language = "hi"
-    authors = listOf("sky")
+    description = "Free YouTube playlists — CUET MCA, CUET PG MCA Computer Science, C Programming"
+    authors = listOf("akhilesh2412")
     status = 1
     tvTypes = listOf("Others")
-    description = "Free YouTube playlists — CUET MCA, CUET PG MCA Computer Science, C Programming"
+    language = "hi"
+    iconUrl = "https://raw.githubusercontent.com/akhilesh2412/youtube-playlists-cs/main/icon.png"
 }
