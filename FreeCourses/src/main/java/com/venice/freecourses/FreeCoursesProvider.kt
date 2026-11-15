@@ -95,11 +95,12 @@ class FreeCoursesProvider : MainAPI() {
     // Thumbnail ka tareeka schnrj/Youtube-thumbnail-downloader wala hai:
     // uska script.js sirf ek hi pattern banata hai —
     // https://img.youtube.com/vi/{VIDEO_ID}/maxresdefault.jpg
-    // (host img.youtube.com, quality maxresdefault). Isiliye har jagah
-    // yahi URL use hota hai, Invidious ke thumbnail format pe depend
-    // nahi karna padta.
+    // (host img.youtube.com, quality maxresdefault). Lekin CSX ke
+    // CineSimkl provider ki tarah image wsrv.nl proxy se jaati hai —
+    // uske posters phone pe dikhte hain, isiliye hamari thumbnails bhi
+    // wsrv.nl se aayengi: https://wsrv.nl/?url=https://img.youtube.com/...
     private fun ytThumb(videoId: String): String =
-        "https://img.youtube.com/vi/$videoId/maxresdefault.jpg"
+        "https://wsrv.nl/?url=https://img.youtube.com/vi/$videoId/maxresdefault.jpg"
 
     private fun bestThumb(video: InvidiousVideo): String? {
         val id = video.videoId
@@ -182,7 +183,7 @@ class FreeCoursesProvider : MainAPI() {
                     InvidiousVideo(
                         title = "Lecture ${index + 1}",
                         videoId = videoId,
-                        thumbUrls = listOf("https://img.youtube.com/vi/$videoId/maxresdefault.jpg")
+                        thumbUrls = listOf("https://wsrv.nl/?url=https://img.youtube.com/vi/$videoId/maxresdefault.jpg")
                     )
                 }
             )
@@ -197,12 +198,12 @@ class FreeCoursesProvider : MainAPI() {
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val items = playlists.map { p ->
-            // Playlist card ka thumbnail: pehle playlistThumbnail, nahi to
-            // pehle video ka thumbnail. Pehle yahan poster hi nahi lagta
-            // tha, isiliye playlist ke thumbnails dikhte nahi the.
+            // Playlist card ka thumbnail: pehle video ka thumbnail
+            // (wsrv.nl proxy se). playlistThumbnail (i.ytimg.com + sqp
+            // params) ab use nahi hota — har poster ek hi saaf tareeke
+            // se aata hai.
             val data = try { fetchPlaylist(p.id) } catch (e: Exception) { null }
-            val poster = data?.playlistThumbnail
-                ?: data?.videos?.firstOrNull()?.let { bestThumb(it) }
+            val poster = data?.videos?.firstOrNull()?.let { bestThumb(it) }
             newMovieSearchResponse(p.title, playlistUrl(p.id), TvType.Movie) {
                 this.posterUrl = poster
             }
@@ -250,8 +251,7 @@ class FreeCoursesProvider : MainAPI() {
             }
         }
 
-        val poster = data.playlistThumbnail
-            ?: videos.firstOrNull()?.let { bestThumb(it) }
+        val poster = videos.firstOrNull()?.let { bestThumb(it) }
 
         return newTvSeriesLoadResponse(
             data.title ?: info?.title ?: id,
